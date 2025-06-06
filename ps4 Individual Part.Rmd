@@ -1,0 +1,217 @@
+---
+title: "EDUC 452 PS4"
+author: "###Jason Zhang###"
+date: "`r Sys.time()`"
+output:
+  html_document:
+    df_print: paged
+  pdf_document:
+    number_sections: true
+urlcolor: blue
+editor_options: 
+  markdown: 
+    wrap: sentence
+---
+
+```{r setup, include=FALSE}
+# load packages
+library("knitr")
+library("tidyverse")
+
+# use a nicer plotting theme theme
+theme_set(theme_classic())
+
+# disable warnings about grouping
+options(dplyr.summarise.inform = FALSE)
+```
+
+> This homework is due by **Friday, Jun. 6th, 8:00am**.
+> Upload a html file to Canvas called `ps4.html` I know it’s a busy time of the year, so you can choose just one of the below to submit.
+> Please also see the ‘independent’ assignment which will need to be submitted independently.\\
+
+```{r}
+library("knitr")
+library("tidyverse")
+
+theme_set(theme_classic())
+
+options(dplyr.summarise.inform = FALSE)
+
+library(haven)
+library(ggplot2)
+
+df <- read.csv("els_cleaned.csv")
+
+df_clean <- df[complete.cases(df[c("BYSES1", "F3ICNTRL", "F3ERN2011")]), ]
+
+df_clean$private <- ifelse(df_clean$F3ICNTRL == 2, 1, 0)
+
+std <- function(x) (x - mean(x, na.rm = TRUE)) / sd(x, na.rm = TRUE)
+df_clean$ses_std <- std(df_clean$BYSES1)
+df_clean$earn_log <- log(df_clean$F3ERN2011 + 1)
+
+print("=== Real Data Analysis ===")
+print(paste("N students:", nrow(df_clean)))
+print(paste("Proportion attending private:", mean(df_clean$private)))
+print(paste("Mean SES by institution type:"))
+print(aggregate(ses_std ~ private, df_clean, mean))
+
+real_model <- lm(earn_log ~ ses_std * private, data = df_clean)
+print(summary(real_model))
+
+beta_0 <- coef(real_model)[1]  # Intercept
+beta_ses <- coef(real_model)[2]  # SES effect
+beta_private <- coef(real_model)[3]  # Private school effect
+beta_interaction <- coef(real_model)[4]  # SES × Private interaction
+sigma <- sigma(real_model)  # Residual SD
+
+simulate_data <- function(n = nrow(df_clean), 
+                         ability_effect = 0.3,  # Hidden confounder
+                         selection_strength = 0.5) {  # How much ability affects school choice
+  
+  ses <- rnorm(n, 0, 1)  # Standardized SES
+  ability <- 0.4 * ses + rnorm(n, 0, 0.8)  # Ability correlated with SES
+  
+  private_prob <- plogis(-1.5 + 0.8 * ses + selection_strength * ability)
+  private <- rbinom(n, 1, private_prob)
+  
+  earnings_log <- beta_0 + 
+                  beta_ses * ses + 
+                  beta_private * private + 
+                  beta_interaction * ses * private +
+                  ability_effect * ability +  # Hidden confounder effect
+                  rnorm(n, 0, sigma)
+  
+  data.frame(
+    ses = ses,
+    private = private,
+    ability = ability,
+    earnings_log = earnings_log
+  )
+}
+
+n_sims <- 500
+results <- data.frame(
+  sim = 1:n_sims,
+  true_effect = NA,
+  naive_effect = NA,
+  ses_adjusted = NA,
+  full_model = NA
+)
+
+set.seed(123)
+for (i in 1:n_sims) {
+  sim_data <- simulate_data()
+  
+  true_model <- lm(earnings_log ~ ses * private + ability, data = sim_data)
+  results$true_effect[i] <- coef(true_model)["private"]
+  
+  # DAM 1: Naive comparison (no controls)
+  naive_model <- lm(earnings_log ~ private, data = sim_data)
+  results$naive_effect[i] <- coef(naive_model)["private"]
+  
+  # DAM 2: Control for SES only
+  ses_model <- lm(earnings_log ~ ses + private, data = sim_data)
+  results$ses_adjusted[i] <- coef(ses_model)["private"]
+  
+  # DAM 3: Full model with interaction (but still missing ability)
+  full_model <- lm(earnings_log ~ ses * private, data = sim_data)
+  results$full_model[i] <- coef(full_model)["private"]
+}
+
+print("\n=== Simulation Results ===")
+print("Average estimates across simulations:")
+print(colMeans(results[, -1]))
+
+print("\nBias (relative to true effect):")
+bias <- colMeans(results[, -1]) - mean(results$true_effect)
+print(bias[-1])
+
+library(tidyr)
+results_long <- results %>%
+  pivot_longer(cols = -sim, names_to = "model", values_to = "estimate")
+
+p <- ggplot(results_long, aes(x = estimate, fill = model)) +
+  geom_density(alpha = 0.6) +
+  geom_vline(xintercept = mean(results$true_effect), 
+             linetype = "dashed", size = 1) +
+  labs(
+    title = "Distribution of Private School Effect Estimates",
+    subtitle = "Dashed line = True causal effect",
+    x = "Estimated Effect on Log Earnings",
+    y = "Density"
+  ) +
+  scale_fill_manual(
+    values = c("true_effect" = "black", 
+               "naive_effect" = "red", 
+               "ses_adjusted" = "blue", 
+               "full_model" = "green"),
+    labels = c("True Effect", "Naive", "SES Adjusted", "Full Model")
+  ) +
+  theme_minimal()
+
+print(p)
+
+# ggsave("simulation_results.png", p, width = 8, height = 6)
+
+print("\n=== Sensitivity Analysis ===")
+selection_strengths <- seq(0, 1, 0.2)
+sensitivity_results <- data.frame(
+  selection = selection_strengths,
+  bias_naive = NA,
+  bias_ses = NA,
+  bias_full = NA
+)
+
+for (j in 1:length(selection_strengths)) {
+  temp_results <- replicate(100, {
+    sim_data <- simulate_data(selection_strength = selection_strengths[j])
+    
+    true_model <- lm(earnings_log ~ ses * private + ability, data = sim_data)
+    true_effect <- coef(true_model)["private"]
+    
+    naive <- coef(lm(earnings_log ~ private, data = sim_data))["private"]
+    ses_adj <- coef(lm(earnings_log ~ ses + private, data = sim_data))["private"]
+    full <- coef(lm(earnings_log ~ ses * private, data = sim_data))["private"]
+    
+    c(naive - true_effect, ses_adj - true_effect, full - true_effect)
+  })
+  
+  sensitivity_results[j, -1] <- rowMeans(temp_results)
+}
+
+print("Bias by selection strength:")
+print(sensitivity_results)
+
+sens_long <- sensitivity_results %>%
+  pivot_longer(cols = -selection, names_to = "model", values_to = "bias")
+
+p2 <- ggplot(sens_long, aes(x = selection, y = bias, color = model)) +
+  geom_line(size = 1.2) +
+  geom_point(size = 3) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(
+    title = "Selection Bias Sensitivity Analysis",
+    x = "Selection Strength (ability → private school)",
+    y = "Bias in Estimated Effect"
+  ) +
+  scale_color_manual(
+    values = c("bias_naive" = "red", "bias_ses" = "blue", "bias_full" = "green"),
+    labels = c("Naive", "SES Adjusted", "Full Model")
+  ) +
+  theme_minimal()
+
+print(p2)
+ggsave("sensitivity_analysis.png", p2, width = 8, height = 6)
+```
+
+That's all!
+Thank you for engaging the 4 problem sets :) Have a wonderful summer!
+
+# Session info
+
+Information about this R session including which version of R was used, and what packages were loaded.
+
+```{r sessinfo}
+sessionInfo()
+```
