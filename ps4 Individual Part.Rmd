@@ -32,18 +32,13 @@ options(dplyr.summarise.inform = FALSE)
 ```{r}
 library("knitr")
 library("tidyverse")
-
 theme_set(theme_classic())
-
 options(dplyr.summarise.inform = FALSE)
-
 library(haven)
 library(ggplot2)
 
 df <- read.csv("els_cleaned.csv")
-
 df_clean <- df[complete.cases(df[c("BYSES1", "F3ICNTRL", "F3ERN2011")]), ]
-
 df_clean$private <- ifelse(df_clean$F3ICNTRL == 2, 1, 0)
 
 std <- function(x) (x - mean(x, na.rm = TRUE)) / sd(x, na.rm = TRUE)
@@ -59,18 +54,18 @@ print(aggregate(ses_std ~ private, df_clean, mean))
 real_model <- lm(earn_log ~ ses_std * private, data = df_clean)
 print(summary(real_model))
 
-beta_0 <- coef(real_model)[1]  # Intercept
-beta_ses <- coef(real_model)[2]  # SES effect
-beta_private <- coef(real_model)[3]  # Private school effect
-beta_interaction <- coef(real_model)[4]  # SES × Private interaction
-sigma <- sigma(real_model)  # Residual SD
+beta_0 <- coef(real_model)[1]
+beta_ses <- coef(real_model)[2]
+beta_private <- coef(real_model)[3]
+beta_interaction <- coef(real_model)[4]
+sigma <- sigma(real_model)
 
 simulate_data <- function(n = nrow(df_clean), 
-                         ability_effect = 0.3,  # Hidden confounder
-                         selection_strength = 0.5) {  # How much ability affects school choice
+                         ability_effect = 0.3,
+                         selection_strength = 0.5) {
   
-  ses <- rnorm(n, 0, 1)  # Standardized SES
-  ability <- 0.4 * ses + rnorm(n, 0, 0.8)  # Ability correlated with SES
+  ses <- rnorm(n, 0, 1)
+  ability <- 0.4 * ses + rnorm(n, 0, 0.8)
   
   private_prob <- plogis(-1.5 + 0.8 * ses + selection_strength * ability)
   private <- rbinom(n, 1, private_prob)
@@ -79,7 +74,7 @@ simulate_data <- function(n = nrow(df_clean),
                   beta_ses * ses + 
                   beta_private * private + 
                   beta_interaction * ses * private +
-                  ability_effect * ability +  # Hidden confounder effect
+                  ability_effect * ability +
                   rnorm(n, 0, sigma)
   
   data.frame(
@@ -106,15 +101,12 @@ for (i in 1:n_sims) {
   true_model <- lm(earnings_log ~ ses * private + ability, data = sim_data)
   results$true_effect[i] <- coef(true_model)["private"]
   
-  # DAM 1: Naive comparison (no controls)
   naive_model <- lm(earnings_log ~ private, data = sim_data)
   results$naive_effect[i] <- coef(naive_model)["private"]
   
-  # DAM 2: Control for SES only
   ses_model <- lm(earnings_log ~ ses + private, data = sim_data)
   results$ses_adjusted[i] <- coef(ses_model)["private"]
   
-  # DAM 3: Full model with interaction (but still missing ability)
   full_model <- lm(earnings_log ~ ses * private, data = sim_data)
   results$full_model[i] <- coef(full_model)["private"]
 }
@@ -131,6 +123,10 @@ library(tidyr)
 results_long <- results %>%
   pivot_longer(cols = -sim, names_to = "model", values_to = "estimate")
 
+results_long$model <- factor(results_long$model, 
+                            levels = c("true_effect", "naive_effect", 
+                                     "ses_adjusted", "full_model"))
+
 p <- ggplot(results_long, aes(x = estimate, fill = model)) +
   geom_density(alpha = 0.6) +
   geom_vline(xintercept = mean(results$true_effect), 
@@ -145,14 +141,12 @@ p <- ggplot(results_long, aes(x = estimate, fill = model)) +
     values = c("true_effect" = "black", 
                "naive_effect" = "red", 
                "ses_adjusted" = "blue", 
-               "full_model" = "green"),
+               "full_model" = "darkgreen"),
     labels = c("True Effect", "Naive", "SES Adjusted", "Full Model")
   ) +
   theme_minimal()
 
 print(p)
-
-# ggsave("simulation_results.png", p, width = 8, height = 6)
 
 print("\n=== Sensitivity Analysis ===")
 selection_strengths <- seq(0, 1, 0.2)
@@ -196,7 +190,7 @@ p2 <- ggplot(sens_long, aes(x = selection, y = bias, color = model)) +
     y = "Bias in Estimated Effect"
   ) +
   scale_color_manual(
-    values = c("bias_naive" = "red", "bias_ses" = "blue", "bias_full" = "green"),
+    values = c("bias_naive" = "red", "bias_ses" = "blue", "bias_full" = "darkgreen"),
     labels = c("Naive", "SES Adjusted", "Full Model")
   ) +
   theme_minimal()
