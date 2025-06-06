@@ -190,8 +190,12 @@ p2 <- ggplot(sens_long, aes(x = selection, y = bias, color = model)) +
     y = "Bias in Estimated Effect"
   ) +
   scale_color_manual(
-    values = c("bias_naive" = "red", "bias_ses" = "blue", "bias_full" = "darkgreen"),
-    labels = c("Naive", "SES Adjusted", "Full Model")
+    values = c("bias_naive" = "red", 
+               "bias_ses" = "blue", 
+               "bias_full" = "darkgreen"),
+    labels = c("bias_naive" = "Naive", 
+               "bias_ses" = "SES Adjusted", 
+               "bias_full" = "Full Model")
   ) +
   theme_minimal()
 
