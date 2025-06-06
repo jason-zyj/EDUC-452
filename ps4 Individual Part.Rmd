@@ -148,6 +148,8 @@ p <- ggplot(results_long, aes(x = estimate, fill = model)) +
 
 print(p)
 
+# ggsave("simulation_results.png", p, width = 8, height = 6)
+
 print("\n=== Sensitivity Analysis ===")
 selection_strengths <- seq(0, 1, 0.2)
 sensitivity_results <- data.frame(
@@ -200,7 +202,7 @@ p2 <- ggplot(sens_long, aes(x = selection, y = bias, color = model)) +
   theme_minimal()
 
 print(p2)
-ggsave("sensitivity_analysis.png", p2, width = 8, height = 6)
+# ggsave("sensitivity_analysis.png", p2, width = 8, height = 6)
 ```
 
 That's all!
